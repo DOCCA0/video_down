@@ -1,0 +1,48 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Python with Tk support
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: true
+
+      - name: Create Windows virtual environment
+        shell: powershell
+        run: |
+          uv venv --python "$env:pythonLocation\python.exe"
+          uv run python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: powershell
+        run: .\scripts\build_windows.ps1
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: video_down-Windows-installer
+          path: dist/installer/video_down-Setup.exe
+          if-no-files-found: error
