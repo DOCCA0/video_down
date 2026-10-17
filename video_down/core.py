@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -95,6 +95,18 @@ class Downloader:
         except DownloadCancelled:
             raise
         except Exception as primary_error:
+            if options.browser and _is_browser_cookie_error(primary_error):
+                self._on_log(
+                    f"无法读取 {options.browser} Cookie，自动改用无 Cookie 模式重试。"
+                )
+                try:
+                    self._download_with_ytdlp(replace(options, browser=None))
+                    return
+                except DownloadCancelled:
+                    raise
+                except Exception as retry_error:
+                    self._on_log(f"无 Cookie 模式仍失败：{retry_error}")
+                    primary_error = retry_error
             if not options.fallback_to_you_get or options.mode == "audio":
                 raise self._friendly_error(primary_error) from primary_error
             self._on_log(f"yt-dlp 下载失败，尝试 you-get：{primary_error}")
@@ -253,6 +265,19 @@ class _YtdlpLogger:
         self.callback(f"错误：{message}")
 
 
+def _is_browser_cookie_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "could not copy chrome cookie database",
+            "could not find chrome cookies database",
+            "failed to decrypt with dpapi",
+            "failed to decrypt cookie",
+        )
+    )
+
+
 def _human_bytes(value: float | None, suffix: str = "") -> str:
     if value is None:
         return ""
@@ -291,4 +316,3 @@ def _ffmpeg_path_directory(executable: str) -> Path:
         shutil.copy2(source, temporary)
         temporary.replace(target)
     return cache_dir
-
